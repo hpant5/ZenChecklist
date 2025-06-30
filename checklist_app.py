@@ -1,12 +1,12 @@
 import tkinter as tk
 from tkinter import messagebox
+from tkcalendar import DateEntry
 import sqlite3
 from datetime import date
 
 DB_FILE = "zenchecklist.db"
 TODAY = date.today().isoformat()
 
-# --- Database Initialization ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -27,19 +27,27 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- Main App Class ---
 class ZenChecklistApp:
     def __init__(self, root):
         self.root = root
         self.root.title("ZenChecklist")
-        self.root.geometry("500x600")
+        self.root.geometry("550x720")
 
         # --- Task Entry ---
         self.task_entry = tk.Entry(root)
         self.task_entry.pack(fill="x", padx=10, pady=(10, 0))
 
+        # --- Calendar for Add Task Date ---
+        date_frame = tk.Frame(root)
+        date_frame.pack(fill="x", padx=10)
+        tk.Label(date_frame, text="Task Date (default is today):").pack(anchor="w")
+        self.task_date_picker = DateEntry(date_frame, width=12, background='darkblue',
+                                          foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.task_date_picker.pack(anchor="w", pady=(0, 5))
+
+        # --- Buttons for Add/Remove ---
         button_frame = tk.Frame(root)
-        button_frame.pack(fill="x", padx=10, pady=(0, 5))
+        button_frame.pack(fill="x", padx=10, pady=(5, 5))
 
         self.add_button = tk.Button(button_frame, text="Add Task", command=self.add_task)
         self.add_button.pack(side="left", padx=(0, 5))
@@ -47,7 +55,7 @@ class ZenChecklistApp:
         self.remove_button = tk.Button(button_frame, text="Remove Selected Task", command=self.remove_selected_task)
         self.remove_button.pack(side="left")
 
-        # --- Task List ---
+        # --- Task List (Today) ---
         task_list_frame = tk.LabelFrame(root, text="Today's Tasks", padx=10, pady=10)
         task_list_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -69,30 +77,38 @@ class ZenChecklistApp:
         self.protein_status.pack(anchor="w")
         self.load_protein()
 
-        # --- History View ---
-        history_frame = tk.LabelFrame(root, text="History View", padx=10, pady=10)
-        history_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        # --- View Tasks for Any Date ---
+        view_frame = tk.LabelFrame(root, text="View Tasks for a Specific Date", padx=10, pady=10)
+        view_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-        tk.Label(history_frame, text="Enter date (YYYY-MM-DD):").pack(anchor="w")
-        self.date_selector = tk.Entry(history_frame)
-        self.date_selector.pack(anchor="w")
-        history_button = tk.Button(history_frame, text="Show", command=self.show_history)
-        history_button.pack(anchor="w", pady=5)
-        self.history_output = tk.Text(history_frame, height=8)
-        self.history_output.pack(fill="both", expand=True)
+        tk.Label(view_frame, text="Select a date:").pack(anchor="w")
+        self.view_date_picker = DateEntry(view_frame, width=12, background='darkblue',
+                                          foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.view_date_picker.pack(anchor="w", pady=(0, 5))
+
+        view_button = tk.Button(view_frame, text="Show Tasks", command=self.show_tasks_for_date)
+        view_button.pack(anchor="w", pady=5)
+
+        self.view_output = tk.Text(view_frame, height=8)
+        self.view_output.pack(fill="both", expand=True)
 
     def add_task(self):
         task = self.task_entry.get().strip()
         if not task:
             messagebox.showwarning("Input Error", "Task cannot be empty.")
             return
+
+        task_date = self.task_date_picker.get_date().isoformat()
+
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("INSERT INTO tasks (task, date) VALUES (?, ?)", (task, TODAY))
+        c.execute("INSERT INTO tasks (task, date) VALUES (?, ?)", (task, task_date))
         conn.commit()
         conn.close()
         self.task_entry.delete(0, tk.END)
-        self.load_today_tasks()
+
+        if task_date == TODAY:
+            self.load_today_tasks()
 
     def remove_selected_task(self):
         selection = self.task_listbox.curselection()
@@ -131,8 +147,6 @@ class ZenChecklistApp:
 
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-
-        # Fetch existing protein for today
         c.execute("SELECT grams FROM protein WHERE date = ?", (TODAY,))
         row = c.fetchone()
         if row:
@@ -141,13 +155,11 @@ class ZenChecklistApp:
         else:
             new_total = added_grams
             c.execute("INSERT INTO protein (date, grams) VALUES (?, ?)", (TODAY, new_total))
-
         conn.commit()
         conn.close()
 
         self.protein_entry.delete(0, tk.END)
         self.protein_status.config(text=f"Saved: {new_total}g")
-
 
     def load_protein(self):
         conn = sqlite3.connect(DB_FILE)
@@ -160,24 +172,19 @@ class ZenChecklistApp:
             self.protein_status.config(text=f"Saved: {row[0]}g")
         conn.close()
 
-    def show_history(self):
-        selected_date = self.date_selector.get().strip()
-        if not selected_date:
-            messagebox.showwarning("Input Error", "Please enter a date.")
-            return
+    def show_tasks_for_date(self):
+        selected_date = self.view_date_picker.get_date().isoformat()
+
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT task FROM tasks WHERE date = ?", (selected_date,))
         tasks = c.fetchall()
-        c.execute("SELECT grams FROM protein WHERE date = ?", (selected_date,))
-        protein = c.fetchone()
         conn.close()
+
         output = f"Tasks on {selected_date}:\n"
         output += "\n".join([f"- {task[0]}" for task in tasks]) or "No tasks found."
-        output += "\n\nProtein consumed: "
-        output += f"{protein[0]}g" if protein else "No data."
-        self.history_output.delete("1.0", tk.END)
-        self.history_output.insert(tk.END, output)
+        self.view_output.delete("1.0", tk.END)
+        self.view_output.insert(tk.END, output)
 
 # --- Launch App ---
 if __name__ == "__main__":
