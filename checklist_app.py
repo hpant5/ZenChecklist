@@ -2,10 +2,11 @@ import tkinter as tk
 from tkinter import messagebox
 from tkcalendar import DateEntry
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 DB_FILE = "zenchecklist.db"
 TODAY = date.today().isoformat()
+YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -27,17 +28,28 @@ def init_db():
     conn.commit()
     conn.close()
 
+def carry_forward_incomplete_tasks():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT task FROM tasks WHERE date = ? AND completed = 0", (YESTERDAY,))
+    tasks = c.fetchall()
+    for (task,) in tasks:
+        c.execute("SELECT COUNT(*) FROM tasks WHERE task = ? AND date = ?", (task, TODAY))
+        if c.fetchone()[0] == 0:
+            c.execute("INSERT INTO tasks (task, date, completed) VALUES (?, ?, 0)", (task, TODAY))
+    conn.commit()
+    conn.close()
+
 class ZenChecklistApp:
     def __init__(self, root):
         self.root = root
         self.root.title("ZenChecklist")
-        self.root.geometry("550x720")
+        self.root.geometry("700x750")
 
-        # --- Task Entry ---
+        # Task Entry
         self.task_entry = tk.Entry(root)
         self.task_entry.pack(fill="x", padx=10, pady=(10, 0))
 
-        # --- Calendar for Add Task Date ---
         date_frame = tk.Frame(root)
         date_frame.pack(fill="x", padx=10)
         tk.Label(date_frame, text="Task Date (default is today):").pack(anchor="w")
@@ -45,26 +57,29 @@ class ZenChecklistApp:
                                           foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
         self.task_date_picker.pack(anchor="w", pady=(0, 5))
 
-        # --- Buttons for Add/Remove ---
-        button_frame = tk.Frame(root)
-        button_frame.pack(fill="x", padx=10, pady=(5, 5))
+        self.add_button = tk.Button(root, text="Add Task", command=self.add_task)
+        self.add_button.pack(padx=10, pady=(0, 5), anchor="w")
 
-        self.add_button = tk.Button(button_frame, text="Add Task", command=self.add_task)
-        self.add_button.pack(side="left", padx=(0, 5))
+        # Task Frames (Left and Right)
+        task_panels = tk.Frame(root)
+        task_panels.pack(fill="both", expand=True, padx=10, pady=5)
 
-        self.remove_button = tk.Button(button_frame, text="Remove Selected Task", command=self.remove_selected_task)
-        self.remove_button.pack(side="left")
+        # To Do (Left)
+        self.todo_frame = tk.LabelFrame(task_panels, text="To Do", padx=10, pady=10)
+        self.todo_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
 
-        # --- Task List (Today) ---
-        task_list_frame = tk.LabelFrame(root, text="Today's Tasks", padx=10, pady=10)
-        task_list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        # Done (Right)
+        self.done_frame = tk.LabelFrame(task_panels, text="Done", padx=10, pady=10)
+        self.done_frame.pack(side="right", fill="both", expand=True)
 
-        self.task_listbox = tk.Listbox(task_list_frame, selectmode=tk.SINGLE)
-        self.task_listbox.pack(fill="both", expand=True)
-        self.task_id_map = {}
-        self.load_today_tasks()
+        # Buttons for task control
+        control_frame = tk.Frame(root)
+        control_frame.pack(fill="x", padx=10, pady=5)
 
-        # --- Protein Tracker ---
+        tk.Button(control_frame, text="Done", command=self.mark_tasks_done).pack(side="left", padx=(0, 5))
+        tk.Button(control_frame, text="Remove", command=self.remove_tasks).pack(side="left")
+
+        # Protein Tracker
         protein_frame = tk.LabelFrame(root, text="Protein Tracker", padx=10, pady=10)
         protein_frame.pack(fill="x", padx=10, pady=5)
 
@@ -77,7 +92,7 @@ class ZenChecklistApp:
         self.protein_status.pack(anchor="w")
         self.load_protein()
 
-        # --- View Tasks for Any Date ---
+        # View tasks for any date
         view_frame = tk.LabelFrame(root, text="View Tasks for a Specific Date", padx=10, pady=10)
         view_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -92,51 +107,63 @@ class ZenChecklistApp:
         self.view_output = tk.Text(view_frame, height=8)
         self.view_output.pack(fill="both", expand=True)
 
+        carry_forward_incomplete_tasks()
+        self.load_today_tasks()
+
     def add_task(self):
         task = self.task_entry.get().strip()
         if not task:
             messagebox.showwarning("Input Error", "Task cannot be empty.")
             return
-
         task_date = self.task_date_picker.get_date().isoformat()
-
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("INSERT INTO tasks (task, date) VALUES (?, ?)", (task, task_date))
+        c.execute("INSERT INTO tasks (task, date, completed) VALUES (?, ?, 0)", (task, task_date))
         conn.commit()
         conn.close()
         self.task_entry.delete(0, tk.END)
-
         if task_date == TODAY:
             self.load_today_tasks()
 
-    def remove_selected_task(self):
-        selection = self.task_listbox.curselection()
-        if not selection:
-            messagebox.showinfo("No Selection", "Please select a task to remove.")
-            return
-        index = selection[0]
-        task_text = self.task_listbox.get(index)
-        task_id = self.task_id_map.get(task_text)
-        if task_id:
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            c.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-            conn.commit()
-            conn.close()
-            self.load_today_tasks()
-
     def load_today_tasks(self):
-        self.task_listbox.delete(0, tk.END)
-        self.task_id_map = {}
+        for widget in self.todo_frame.winfo_children():
+            widget.destroy()
+        for widget in self.done_frame.winfo_children():
+            widget.destroy()
+        self.task_vars = {}
+
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT id, task FROM tasks WHERE date = ?", (TODAY,))
+        c.execute("SELECT id, task, completed FROM tasks WHERE date = ?", (TODAY,))
         rows = c.fetchall()
         conn.close()
-        for task_id, task_text in rows:
-            self.task_listbox.insert(tk.END, task_text)
-            self.task_id_map[task_text] = task_id
+
+        for task_id, task_text, completed in rows:
+            var = tk.IntVar()
+            frame = self.done_frame if completed else self.todo_frame
+            cb = tk.Checkbutton(frame, text=task_text, variable=var)
+            cb.pack(anchor="w")
+            self.task_vars[task_id] = (var, completed)
+
+    def mark_tasks_done(self):
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        for task_id, (var, completed) in self.task_vars.items():
+            if var.get() == 1 and not completed:
+                c.execute("UPDATE tasks SET completed = 1 WHERE id = ?", (task_id,))
+        conn.commit()
+        conn.close()
+        self.load_today_tasks()
+
+    def remove_tasks(self):
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        for task_id, (var, _) in self.task_vars.items():
+            if var.get() == 1:
+                c.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        conn.commit()
+        conn.close()
+        self.load_today_tasks()
 
     def save_protein(self):
         try:
@@ -144,7 +171,6 @@ class ZenChecklistApp:
         except ValueError:
             messagebox.showerror("Input Error", "Please enter a valid number.")
             return
-
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT grams FROM protein WHERE date = ?", (TODAY,))
@@ -157,7 +183,6 @@ class ZenChecklistApp:
             c.execute("INSERT INTO protein (date, grams) VALUES (?, ?)", (TODAY, new_total))
         conn.commit()
         conn.close()
-
         self.protein_entry.delete(0, tk.END)
         self.protein_status.config(text=f"Saved: {new_total}g")
 
@@ -166,27 +191,30 @@ class ZenChecklistApp:
         c = conn.cursor()
         c.execute("SELECT grams FROM protein WHERE date = ?", (TODAY,))
         row = c.fetchone()
+        conn.close()
         if row:
             self.protein_entry.delete(0, tk.END)
             self.protein_entry.insert(0, str(row[0]))
             self.protein_status.config(text=f"Saved: {row[0]}g")
-        conn.close()
 
     def show_tasks_for_date(self):
         selected_date = self.view_date_picker.get_date().isoformat()
-
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT task FROM tasks WHERE date = ?", (selected_date,))
+        c.execute("SELECT task, completed FROM tasks WHERE date = ?", (selected_date,))
         tasks = c.fetchall()
         conn.close()
 
         output = f"Tasks on {selected_date}:\n"
-        output += "\n".join([f"- {task[0]}" for task in tasks]) or "No tasks found."
+        for task, completed in tasks:
+            mark = "[✓] " if completed else ""
+            output += f"{mark}{task}\n"
+        if not tasks:
+            output += "No tasks found."
         self.view_output.delete("1.0", tk.END)
         self.view_output.insert(tk.END, output)
 
-# --- Launch App ---
+# --- Run ---
 if __name__ == "__main__":
     init_db()
     root = tk.Tk()
