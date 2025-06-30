@@ -124,16 +124,30 @@ class ZenChecklistApp:
 
     def save_protein(self):
         try:
-            grams = int(self.protein_entry.get())
+            added_grams = int(self.protein_entry.get())
         except ValueError:
             messagebox.showerror("Input Error", "Please enter a valid number.")
             return
+
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("INSERT OR REPLACE INTO protein (date, grams) VALUES (?, ?)", (TODAY, grams))
+
+        # Fetch existing protein for today
+        c.execute("SELECT grams FROM protein WHERE date = ?", (TODAY,))
+        row = c.fetchone()
+        if row:
+            new_total = row[0] + added_grams
+            c.execute("UPDATE protein SET grams = ? WHERE date = ?", (new_total, TODAY))
+        else:
+            new_total = added_grams
+            c.execute("INSERT INTO protein (date, grams) VALUES (?, ?)", (TODAY, new_total))
+
         conn.commit()
         conn.close()
-        self.protein_status.config(text=f"Saved: {grams}g")
+
+        self.protein_entry.delete(0, tk.END)
+        self.protein_status.config(text=f"Saved: {new_total}g")
+
 
     def load_protein(self):
         conn = sqlite3.connect(DB_FILE)
