@@ -78,10 +78,10 @@ def apply_recurring_tasks():
         if recurrence == "daily":
             should_add = True
         elif recurrence == "weekly":
-            created_date = YESTERDAY  # assume added yesterday for comparison
+            created_date = YESTERDAY  
             should_add = date.fromisoformat(created_date).weekday() == today_obj.weekday()
         elif recurrence == "monthly":
-            should_add = True if today_obj.day == 1 else False  # simplify: every 1st of month
+            should_add = True if today_obj.day == 1 else False  
         else:
             should_add = False
 
@@ -102,7 +102,7 @@ class ZenChecklistApp:
         self.task_entry = tk.Entry(root)
         self.task_entry.pack(fill="x", padx=10, pady=(10, 0))
 
-        # Category dropdown
+
         category_frame = tk.Frame(root)
         category_frame.pack(fill="x", padx=10)
         tk.Label(category_frame, text="Select Category:").pack(anchor="w")
@@ -114,7 +114,7 @@ class ZenChecklistApp:
         self.custom_category_entry = tk.Entry(category_frame)
         self.category_combo.bind("<<ComboboxSelected>>", self.toggle_custom_category)
 
-        # Recurrence dropdown
+
         tk.Label(category_frame, text="Repeat:").pack(anchor="w", pady=(10, 0))
         self.recurrence_var = tk.StringVar()
         self.recurrence_combo = ttk.Combobox(category_frame, textvariable=self.recurrence_var, state="readonly")
@@ -122,7 +122,7 @@ class ZenChecklistApp:
         self.recurrence_combo.current(0)
         self.recurrence_combo.pack(fill="x")
 
-        # Date selector
+
         tk.Label(category_frame, text="Task Date:").pack(anchor="w", pady=(10, 0))
         self.task_date_picker = DateEntry(category_frame, width=12, date_pattern='yyyy-mm-dd')
         self.task_date_picker.pack(anchor="w")
@@ -130,11 +130,11 @@ class ZenChecklistApp:
         self.add_button = tk.Button(root, text="Add Task", command=self.add_task)
         self.add_button.pack(padx=10, pady=5, anchor="w")
 
-        # Panels
+
         task_panels = tk.Frame(root)
         task_panels.pack(fill="both", expand=True, padx=10)
 
-        # Left: To Do (Listbox)
+
         self.todo_frame = tk.LabelFrame(task_panels, text="To Do")
         self.todo_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
         self.todo_listbox = tk.Listbox(self.todo_frame, selectmode=tk.MULTIPLE)
@@ -142,7 +142,7 @@ class ZenChecklistApp:
         self.todo_listbox.bind("<B1-Motion>", self.drag_task)
         self.todo_listbox.bind("<ButtonRelease-1>", self.drop_task)
 
-        # Right: Done (Checkbuttons)
+
         self.done_frame = tk.LabelFrame(task_panels, text="Done")
         self.done_frame.pack(side="right", fill="both", expand=True)
         self.task_vars = {}
@@ -152,7 +152,6 @@ class ZenChecklistApp:
         tk.Button(control_frame, text="Done", command=self.mark_tasks_done).pack(side="left", padx=(0, 5))
         tk.Button(control_frame, text="Remove", command=self.remove_tasks).pack(side="left")
 
-        # Protein Tracker
         protein_frame = tk.LabelFrame(root, text="Protein Tracker")
         protein_frame.pack(fill="x", padx=10, pady=5)
         tk.Label(protein_frame, text="Protein consumed today (g):").pack(anchor="w")
@@ -163,7 +162,6 @@ class ZenChecklistApp:
         self.protein_status.pack(anchor="w")
         self.load_protein()
 
-        # View by Date
         view_frame = tk.LabelFrame(root, text="View Tasks for a Specific Date")
         view_frame.pack(fill="both", padx=10, pady=5)
         tk.Label(view_frame, text="Select a date:").pack(anchor="w")
