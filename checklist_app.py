@@ -6,6 +6,7 @@ from datetime import date
 DB_FILE = "zenchecklist.db"
 TODAY = date.today().isoformat()
 
+# --- Database Initialization ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -26,27 +27,36 @@ def init_db():
     conn.commit()
     conn.close()
 
-
+# --- Main App Class ---
 class ZenChecklistApp:
     def __init__(self, root):
         self.root = root
         self.root.title("ZenChecklist")
         self.root.geometry("500x600")
 
-        task_frame = tk.LabelFrame(root, text="Today's Tasks", padx=10, pady=10)
-        task_frame.pack(fill="both", expand=True, padx=10, pady=5)
-
+        # --- Task Entry ---
         self.task_entry = tk.Entry(root)
-        self.task_entry.pack(fill="x", padx=10, pady=(0, 5))
+        self.task_entry.pack(fill="x", padx=10, pady=(10, 0))
 
-        add_button = tk.Button(root, text="Add Task", command=self.add_task)
-        add_button.pack(padx=10, pady=(0, 5))
+        button_frame = tk.Frame(root)
+        button_frame.pack(fill="x", padx=10, pady=(0, 5))
 
-        self.task_list_frame = task_frame
-        self.task_checkbuttons = []
+        self.add_button = tk.Button(button_frame, text="Add Task", command=self.add_task)
+        self.add_button.pack(side="left", padx=(0, 5))
+
+        self.remove_button = tk.Button(button_frame, text="Remove Selected Task", command=self.remove_selected_task)
+        self.remove_button.pack(side="left")
+
+        # --- Task List ---
+        task_list_frame = tk.LabelFrame(root, text="Today's Tasks", padx=10, pady=10)
+        task_list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        self.task_listbox = tk.Listbox(task_list_frame, selectmode=tk.SINGLE)
+        self.task_listbox.pack(fill="both", expand=True)
+        self.task_id_map = {}
         self.load_today_tasks()
 
-
+        # --- Protein Tracker ---
         protein_frame = tk.LabelFrame(root, text="Protein Tracker", padx=10, pady=10)
         protein_frame.pack(fill="x", padx=10, pady=5)
 
@@ -59,6 +69,7 @@ class ZenChecklistApp:
         self.protein_status.pack(anchor="w")
         self.load_protein()
 
+        # --- History View ---
         history_frame = tk.LabelFrame(root, text="History View", padx=10, pady=10)
         history_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -83,18 +94,33 @@ class ZenChecklistApp:
         self.task_entry.delete(0, tk.END)
         self.load_today_tasks()
 
+    def remove_selected_task(self):
+        selection = self.task_listbox.curselection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Please select a task to remove.")
+            return
+        index = selection[0]
+        task_text = self.task_listbox.get(index)
+        task_id = self.task_id_map.get(task_text)
+        if task_id:
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            conn.commit()
+            conn.close()
+            self.load_today_tasks()
+
     def load_today_tasks(self):
-        for widget in self.task_list_frame.winfo_children():
-            widget.destroy()
+        self.task_listbox.delete(0, tk.END)
+        self.task_id_map = {}
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT task FROM tasks WHERE date = ?", (TODAY,))
+        c.execute("SELECT id, task FROM tasks WHERE date = ?", (TODAY,))
         rows = c.fetchall()
         conn.close()
-        for row in rows:
-            cb = tk.Checkbutton(self.task_list_frame, text=row[0])
-            cb.pack(anchor="w")
-            self.task_checkbuttons.append(cb)
+        for task_id, task_text in rows:
+            self.task_listbox.insert(tk.END, task_text)
+            self.task_id_map[task_text] = task_id
 
     def save_protein(self):
         try:
@@ -139,7 +165,7 @@ class ZenChecklistApp:
         self.history_output.delete("1.0", tk.END)
         self.history_output.insert(tk.END, output)
 
-
+# --- Launch App ---
 if __name__ == "__main__":
     init_db()
     root = tk.Tk()
